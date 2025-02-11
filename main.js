@@ -7,118 +7,101 @@ const transactionList = document.getElementById("transaction-list");
 const totalIncome = document.getElementById("total-income");
 const totalExpense = document.getElementById("total-expense");
 
-let balance = 0;
-let totalIncomeValue = 0;
-let totalExpenseValue = 0;
+// Initialize transactions array from localStorage or empty array
+let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
 
-// Update balance display
-function updateBalance() {
-  balanceAmount.textContent = `$${balance.toFixed(2)}`;
+// Initial load
+document.addEventListener('DOMContentLoaded', initApp);
+
+function initApp() {
+  form.addEventListener('submit', addNewTransaction);
+  transactionList.addEventListener('click', handleTransactionActions);
+  updateAllValues();
+  renderTransactions();
 }
 
-// Update totals (income or expense)
-function updateTotals(amount, type, isAddition = true) {
-  localStorage.setItem("balance", balance.toString());
-  if (type === "income") {
-    totalIncomeValue += isAddition ? amount : -amount;
-    totalIncome.textContent = `$${totalIncomeValue.toFixed(2)}`;
-    localStorage.setItem("total income", totalIncomeValue.toString());
-  } else {
-    totalExpenseValue += isAddition ? amount : -amount;
-    totalExpense.textContent = `$${totalExpenseValue.toFixed(2)}`;
-    localStorage.setItem("total expense", totalExpenseValue.toString());
-  }
-}
-
-// Add a transaction to the list and update totals
-function addTransaction(description, amount, type) {
-  const transactionHTML = `
-    <div class="list-with-delete">
-      <li class=${type}>
-        <span>${description}</span><span>$${amount.toFixed(2)}</span>
-      </li>
-      <div class="delete"><i class="fa-solid fa-trash"></i></div>
-    </div>
-  `;
-  transactionList.insertAdjacentHTML("beforeend", transactionHTML);
-
-  balance += type === "income" ? amount : -amount;
-  localStorage.setItem("balance", balance.toString());
-  updateTotals(amount, type, true);
-  updateBalance();
-}
-
-// Save transaction list to localStorage
-function saveData() {
-  try {
-    localStorage.setItem("listData", transactionList.innerHTML);
-  } catch (error) {
-    console.error("Failed to save data:", error);
-    alert("Unable to save transaction. Storage may be full or disabled.");
-  }
-}
-
-// Load data from localStorage
-function loadData() {
-  try {
-    const listData = localStorage.getItem("listData");
-    const balanceData = parseFloat(localStorage.getItem("balance")) || 0;
-    const incomeData = parseFloat(localStorage.getItem("total income")) || 0;
-    const expenseData = parseFloat(localStorage.getItem("total expense")) || 0;
-
-    balance = balanceData;
-    totalIncomeValue = incomeData;
-    totalExpenseValue = expenseData;
-
-    if (listData) {
-      transactionList.innerHTML = listData;
-      updateBalance();
-      totalIncome.textContent = `$${incomeData.toFixed(2)}`;
-      totalExpense.textContent = `$${expenseData.toFixed(2)}`;
-    }
-  } catch (error) {
-    console.error("Failed to load data:", error);
-    alert("Unable to load saved transactions.");
-  }
-}
-
-// Handle form submission
-form.addEventListener("submit", (e) => {
+function addNewTransaction(e) {
   e.preventDefault();
-  const description = descriptionInput.value.trim();
-  const amount = parseFloat(amountInput.value);
-  const type = transactionTypeInput.value;
-
-  if (!description || isNaN(amount) || amount <= 0 || type === "none") {
-    alert("Please enter a valid description and amount.");
-    return;
-  }
-
-  addTransaction(description, amount, type);
-  saveData();
+  
+  const newTransaction = {
+    id: Date.now(),
+    description: descriptionInput.value.trim(),
+    amount: parseFloat(amountInput.value),
+    type: transactionTypeInput.value
+  };
+  
+  if (!validateTransaction(newTransaction)) return;
+  
+  transactions = [...transactions, newTransaction];
+  updateAllValues();
+  saveToLocalStorage();
+  renderTransactions();
   form.reset();
-});
+}
 
-// Handle transaction deletion
-transactionList.addEventListener("click", (event) => {
-  if (event.target.closest(".delete")) {
-    const transactionDiv = event.target.closest(".list-with-delete");
-    const transactionAmount = parseFloat(
-      transactionDiv
-        .querySelector("li span:nth-child(2)")
-        .textContent.replace("$", "")
-    );
-    const transactionType = transactionDiv.querySelector("li").className;
+function validateTransaction(transaction) {
+  return transaction.description && 
+         !isNaN(transaction.amount) && 
+         transaction.amount > 0 && 
+         transaction.type !== 'none' || 
+         (alert('Please enter valid transaction details'), false);
+}
 
-    balance -=
-      transactionType === "income" ? transactionAmount : -transactionAmount;
-    updateTotals(transactionAmount, transactionType, false);
-    updateBalance();
+function renderTransactions() {
+  const transactionHTML = transactions
+    .map(({ id, type, description, amount }) => `
+      <div class="list-with-delete" data-id="${id}">
+        <li class="${type}">
+          <span>${description}</span>
+          <span>$${amount.toFixed(2)}</span>
+        </li>
+        <div class="delete"><i class="fa-solid fa-trash"></i></div>
+      </div>
+    `)
+    .join('');
+    
+  transactionList.innerHTML = transactionHTML;
+}
 
-    transactionDiv.remove();
-    saveData();
-  }
-});
+function handleTransactionActions(e) {
+  const deleteBtn = e.target.closest('.delete');
+  if (!deleteBtn) return;
+  
+  const transactionId = parseInt(deleteBtn.closest('.list-with-delete').dataset.id);
+  transactions = transactions.filter(({ id }) => id !== transactionId);
+  
+  updateAllValues();
+  saveToLocalStorage();
+  renderTransactions();
+}
 
-// Load saved data on page load
-loadData();
+function updateAllValues() {
+  const { balance, incomeTotal, expenseTotal } = transactions.reduce((acc, { type, amount }) => {
+    if (type === 'income') {
+      acc.incomeTotal += amount;
+      acc.balance += amount;
+    } else {
+      acc.expenseTotal += amount;
+      acc.balance -= amount;
+    }
+    return acc;
+  }, { balance: 0, incomeTotal: 0, expenseTotal: 0 });
+
+  // Update DOM
+  balanceAmount.textContent = `$${balance.toFixed(2)}`;
+  totalIncome.textContent = `$${incomeTotal.toFixed(2)}`;
+  totalExpense.textContent = `$${expenseTotal.toFixed(2)}`;
+}
+
+function saveToLocalStorage() {
+  const storageData = {
+    transactions,
+    balance: balanceAmount.textContent.replace('$', ''),
+    totalIncome: totalIncome.textContent.replace('$', ''),
+    totalExpense: totalExpense.textContent.replace('$', '')
+  };
+
+  Object.entries(storageData).forEach(([key, value]) => {
+    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  }); 
+}
